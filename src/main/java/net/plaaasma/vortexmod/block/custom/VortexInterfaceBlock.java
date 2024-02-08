@@ -1,29 +1,21 @@
 package net.plaaasma.vortexmod.block.custom;
 
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.Connection;
 import net.minecraft.network.chat.Component;
-
-import java.util.*;
-
-import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.network.MemoryServerHandshakePacketListenerImpl;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
-import net.minecraft.server.players.PlayerList;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.Containers;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.*;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LightningBolt;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -32,23 +24,18 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityTicker;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.storage.loot.LootParams;
-import net.minecraft.world.level.storage.loot.parameters.LootContextParamSets;
-import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.common.world.ForgeChunkManager;
-import net.minecraftforge.event.ServerChatEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.plaaasma.vortexmod.VortexMod;
-import net.plaaasma.vortexmod.block.ModBlocks;
-import net.plaaasma.vortexmod.block.entity.*;
+import net.plaaasma.vortexmod.block.entity.ModBlockEntities;
+import net.plaaasma.vortexmod.block.entity.SizeManipulatorBlockEntity;
+import net.plaaasma.vortexmod.block.entity.VortexInterfaceBlockEntity;
 import net.plaaasma.vortexmod.entities.ModEntities;
 import net.plaaasma.vortexmod.entities.custom.TardisEntity;
 import net.plaaasma.vortexmod.interior.registry.InteriorRegistry;
@@ -58,10 +45,11 @@ import net.plaaasma.vortexmod.item.ModItems;
 import net.plaaasma.vortexmod.mapdata.LocationMapData;
 import net.plaaasma.vortexmod.sound.ModSounds;
 import net.plaaasma.vortexmod.worldgen.dimension.ModDimensions;
-import org.apache.logging.log4j.core.jmx.Server;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.function.Predicate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 public class VortexInterfaceBlock extends BaseEntityBlock {
     public VortexInterfaceBlock(Properties pProperties) {
@@ -159,11 +147,7 @@ public class VortexInterfaceBlock extends BaseEntityBlock {
                     size = 1;
                 }
 
-                int y_size = 5;
-
-                if (size < 5) {
-                    y_size = size;
-                }
+                int y_size = Math.min(size, 5);
 
                 // Give the TARDIS an assigned interior position, with an area of 256cm^3
                 // fixme - there are so many variables here and so much indentation and so much bulk code, it needs cleanup but this isnt my job - duzo
@@ -182,7 +166,7 @@ public class VortexInterfaceBlock extends BaseEntityBlock {
 
                 int door_distance = 10 + size;
 
-                BlockPos interfacePos = null;
+                BlockPos interfacePos = tardisTarget;
                 List<BlockPos> toBeRemoved = new ArrayList<>();
 
                 for (int x = -size; x <= size; x++) {
@@ -193,10 +177,8 @@ public class VortexInterfaceBlock extends BaseEntityBlock {
 
                             BlockEntity blockEntity = serverLevel.getBlockEntity(currentPos);
 
-                            if (blockEntity != null) {
-                                if (blockEntity instanceof VortexInterfaceBlockEntity vortexInterfaceBlockEntity) {
-                                    interfacePos = currentTargetPos;
-                                }
+                            if (blockEntity instanceof VortexInterfaceBlockEntity vortexInterfaceBlockEntity) {
+                                interfacePos = currentTargetPos;
                             }
 
                             BlockState blockState = serverLevel.getBlockState(currentPos);
@@ -253,30 +235,30 @@ public class VortexInterfaceBlock extends BaseEntityBlock {
                     // }
 
                     // tardisDimension.setBlockAndUpdate(tardisTarget, ModBlocks.DOOR_BLOCK.get().defaultBlockState());
-
-                    VortexInterfaceBlockEntity interfaceBlockEntity = (VortexInterfaceBlockEntity) tardisDimension.getBlockEntity(interfacePos);
-
-                    TardisEntity tardisMob = ModEntities.TARDIS.get().spawn(serverLevel, pPos, MobSpawnType.NATURAL);
-                    serverLevel.addFreshEntity(tardisMob);
-
-                    tardisMob.setOwnerID(ownerCode);
-                    interfaceBlockEntity.setExtUUID(tardisMob.getUUID());
-                    data.getDataMap().put(tardisMob.getUUID().toString(), tardisTarget);
-
-                    ChunkPos chunkPos = tardisDimension.getChunkAt(interfacePos).getPos();
-                    // fixme, you'll want to set these forces to false after your done or else youre gonna have performance issues - duzo
-                    ForgeChunkManager.forceChunk(tardisDimension, VortexMod.MODID, interfacePos, chunkPos.x, chunkPos.z, true, true);
-                    chunkPos = serverLevel.getChunkAt(pPos).getPos();
-                    ForgeChunkManager.forceChunk(serverLevel, VortexMod.MODID, pPos, chunkPos.x, chunkPos.z, true, true);
-
-                    pPlayer.setItemInHand(pHand, new ItemStack(ModItems.TARDIS_KEY.get(), 1));
-
-                    handleLightningStrikes(serverLevel, pPos);
-
-                    data.setDirty();
-
-                    serverLevel.removeBlock(pPos, false);
                 }
+
+                VortexInterfaceBlockEntity interfaceBlockEntity = (VortexInterfaceBlockEntity) tardisDimension.getBlockEntity(interfacePos);
+
+                TardisEntity tardisMob = ModEntities.TARDIS.get().spawn(serverLevel, pPos, MobSpawnType.NATURAL);
+                serverLevel.addFreshEntity(tardisMob);
+
+                tardisMob.setOwnerID(ownerCode);
+                interfaceBlockEntity.setExtUUID(tardisMob.getUUID());
+                data.getDataMap().put(tardisMob.getUUID().toString(), tardisTarget);
+
+                ChunkPos chunkPos = tardisDimension.getChunkAt(interfacePos).getPos();
+                // fixme, you'll want to set these forces to false after your done or else youre gonna have performance issues - duzo
+                ForgeChunkManager.forceChunk(tardisDimension, VortexMod.MODID, interfacePos, chunkPos.x, chunkPos.z, true, true);
+                chunkPos = serverLevel.getChunkAt(pPos).getPos();
+                ForgeChunkManager.forceChunk(serverLevel, VortexMod.MODID, pPos, chunkPos.x, chunkPos.z, true, true);
+
+                pPlayer.setItemInHand(pHand, new ItemStack(ModItems.TARDIS_KEY.get(), 1));
+
+                handleLightningStrikes(serverLevel, pPos);
+
+                data.setDirty();
+
+                serverLevel.removeBlock(pPos, false);
             }
         }
         return InteractionResult.CONSUME;
